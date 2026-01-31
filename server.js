@@ -28,6 +28,17 @@ db.exec(`
     note TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS exercise_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workout_date TEXT NOT NULL,
+    plan_id INTEGER NOT NULL,
+    exercise TEXT NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(workout_date, plan_id, exercise)
+  );
+  CREATE INDEX IF NOT EXISTS idx_exercise_logs_date ON exercise_logs(workout_date);
 `);
 
 app.use(express.json({ limit: "64kb" }));
@@ -36,6 +47,115 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
 });
+
+const DEFAULT_PLAN = {
+  id: 0,
+  day_number: 0,
+  focus: "full body",
+  exercises: ["squats", "push-ups", "plank"],
+  difficulty: 3
+};
+
+function getPlanById(id) {
+  if (id === 0) return DEFAULT_PLAN;
+  const row = db
+    .prepare(
+      `
+      SELECT id, day_number, focus, exercises
+      FROM workout_plans
+      WHERE id = ?
+      `
+    )
+    .get(id);
+  if (!row) return null;
+  let exercises = [];
+  try {
+    exercises = JSON.parse(row.exercises || "[]");
+  } catch {
+    exercises = [];
+  }
+  return { ...row, exercises, difficulty: 3 };
+}
+
+function getFirstPlan() {
+  const row = db
+    .prepare(
+      `
+      SELECT id, day_number, focus, exercises
+      FROM workout_plans
+      ORDER BY day_number ASC, id ASC
+      LIMIT 1
+      `
+    )
+    .get();
+  if (!row) return DEFAULT_PLAN;
+  let exercises = [];
+  try {
+    exercises = JSON.parse(row.exercises || "[]");
+  } catch {
+    exercises = [];
+  }
+  return { ...row, exercises, difficulty: 3 };
+}
+
+function getNextPlan(afterDayNumber) {
+  const row = db
+    .prepare(
+      `
+      SELECT id, day_number, focus, exercises
+      FROM workout_plans
+      WHERE day_number > ?
+      ORDER BY day_number ASC, id ASC
+      LIMIT 1
+      `
+    )
+    .get(afterDayNumber);
+  if (!row) return getFirstPlan();
+  let exercises = [];
+  try {
+    exercises = JSON.parse(row.exercises || "[]");
+  } catch {
+    exercises = [];
+  }
+  return { ...row, exercises, difficulty: 3 };
+}
+
+function getPlanForDate(dateISO) {
+  const existing = db
+    .prepare(
+      `
+      SELECT plan_id
+      FROM exercise_logs
+      WHERE workout_date = ?
+      LIMIT 1
+      `
+    )
+    .get(dateISO);
+  if (existing?.plan_id !== undefined) {
+    return getPlanById(existing.plan_id) || getFirstPlan();
+  }
+
+  const lastAssigned = db
+    .prepare(
+      `
+      SELECT plan_id
+      FROM exercise_logs
+      WHERE workout_date < ?
+      ORDER BY workout_date DESC, updated_at DESC
+      LIMIT 1
+      `
+    )
+    .get(dateISO);
+
+  if (lastAssigned?.plan_id !== undefined) {
+    const lastPlan = getPlanById(lastAssigned.plan_id);
+    if (lastPlan) {
+      return getNextPlan(lastPlan.day_number ?? 0);
+    }
+  }
+
+  return getFirstPlan();
+}
 
 // Agent-only logging endpoint (UI does not expose controls).
 app.post("/api/workouts", (req, res) => {
@@ -134,6 +254,143 @@ app.get("/api/today", (req, res) => {
     intensity,
     note: summary?.note || row?.note || ""
   });
+});
+
+app.get("/api/today-plan", (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const plan = getPlanForDate(today);
+  const exercises = Array.isArray(plan.exercises) ? plan.exercises : [];
+
+  // Normalize exercises - can be strings or objects with .exercise property
+  const normalizedExercises = exercises.map((ex) =>
+    typeof ex === "string" ? ex : ex.exercise || JSON.stringify(ex)
+  );
+
+  if (normalizedExercises.length) {
+    const insert = db.prepare(
+      `
+      INSERT OR IGNORE INTO exercise_logs (workout_date, plan_id, exercise, completed)
+      VALUES (?, ?, ?, 0)
+      `
+    );
+    const insertMany = db.transaction((rows) => {
+      rows.forEach((exercise) => {
+        insert.run(today, plan.id, exercise);
+      });
+    });
+    insertMany(normalizedExercises);
+  }
+
+  const logs = db
+    .prepare(
+      `
+      SELECT exercise, completed
+      FROM exercise_logs
+      WHERE workout_date = ? AND plan_id = ?
+      ORDER BY id ASC
+      `
+    )
+    .all(today, plan.id);
+
+  res.json({
+    date: today,
+    plan: {
+      id: plan.id,
+      dayNumber: plan.day_number ?? 0,
+      focus: plan.focus || "",
+      difficulty: plan.difficulty ?? 3,
+      exercises: normalizedExercises
+    },
+    logs
+  });
+});
+
+app.post("/api/exercise-log", (req, res) => {
+  const { date, planId, exercise, completed } = req.body || {};
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+  }
+  if (planId === undefined || planId === null) {
+    return res.status(400).json({ error: "planId is required" });
+  }
+  if (!exercise) {
+    return res.status(400).json({ error: "exercise is required" });
+  }
+  const safeCompleted = completed ? 1 : 0;
+
+  db.prepare(
+    `
+    INSERT INTO exercise_logs (workout_date, plan_id, exercise, completed, updated_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(workout_date, plan_id, exercise) DO UPDATE SET
+      completed = excluded.completed,
+      updated_at = excluded.updated_at
+    `
+  ).run(date, planId, String(exercise), safeCompleted);
+
+  const allLogs = db
+    .prepare(
+      `
+      SELECT COUNT(*) as total, SUM(completed) as completed
+      FROM exercise_logs
+      WHERE workout_date = ? AND plan_id = ?
+      `
+    )
+    .get(date, planId);
+
+  const total = allLogs?.total || 0;
+  const done = allLogs?.completed || 0;
+  const allCompleted = total > 0 && total === done;
+
+  if (allCompleted) {
+    if (planId !== 0) {
+      db.prepare(
+        `
+        UPDATE workout_plans
+        SET completed_at = datetime('now')
+        WHERE id = ? AND completed_at IS NULL
+        `
+      ).run(planId);
+    }
+
+    const plan = getPlanById(planId) || DEFAULT_PLAN;
+    const intensity = plan.difficulty ?? 3;
+    const existing = db
+      .prepare(
+        `
+        SELECT id
+        FROM workouts
+        WHERE workout_date = ? AND note = ?
+        LIMIT 1
+        `
+      )
+      .get(date, "checklist");
+    if (existing?.id) {
+      db.prepare(
+        `
+        UPDATE workouts
+        SET intensity = ?, created_at = datetime('now')
+        WHERE id = ?
+        `
+      ).run(intensity, existing.id);
+    } else {
+      db.prepare(
+        `
+        INSERT INTO workouts (workout_date, intensity, note)
+        VALUES (?, ?, ?)
+        `
+      ).run(date, intensity, "checklist");
+    }
+  } else {
+    db.prepare(
+      `
+      DELETE FROM workouts
+      WHERE workout_date = ? AND note = ?
+      `
+    ).run(date, "checklist");
+  }
+
+  res.json({ ok: true, allCompleted });
 });
 
 app.listen(PORT, () => {

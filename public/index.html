@@ -13,9 +13,17 @@
         <p class="meta">last 12 months</p>
       </header>
 
-      <section class="today" aria-label="Today's workout">
-        <div class="today-label">today</div>
-        <div class="today-value" id="todayWorkout">loading</div>
+      <section class="checklist" aria-label="Today's workout checklist">
+        <div class="checklist-header">
+          <div class="checklist-kicker">today's plan</div>
+          <div class="checklist-actions">
+            <div class="checklist-meta" id="planMeta">loading</div>
+            <button class="checklist-button" id="checkAllButton" type="button">
+              check all
+            </button>
+          </div>
+        </div>
+        <ul class="checklist-list" id="checklist"></ul>
       </section>
 
       <section class="heatmap" aria-label="Workout intensity heatmap">
