@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workout Heatmap</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="top">
+        <h1>workouts</h1>
+        <p class="meta">last 12 months</p>
+      </header>
+
+      <section class="today" aria-label="Today's workout">
+        <div class="today-label">today</div>
+        <div class="today-value" id="todayWorkout">loading</div>
+      </section>
+
+      <section class="heatmap" aria-label="Workout intensity heatmap">
+        <div class="months" id="monthLabels"></div>
+        <div class="grid" id="heatmapGrid" role="grid"></div>
+        <div class="legend">
+          <span>low</span>
+          <div class="legend-squares">
+            <span class="square level-0"></span>
+            <span class="square level-1"></span>
+            <span class="square level-2"></span>
+            <span class="square level-3"></span>
+            <span class="square level-4"></span>
+          </div>
+          <span>high</span>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
