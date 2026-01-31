@@ -13,24 +13,41 @@
         <p class="meta">last 12 months</p>
       </header>
 
-      <section class="checklist" aria-label="Today's workout checklist">
-        <div class="checklist-header">
-          <div class="checklist-kicker">today's plan</div>
-          <div class="checklist-actions">
-            <div class="checklist-meta" id="planMeta">loading</div>
-            <button class="checklist-button" id="checkAllButton" type="button">
-              check all
-            </button>
+      <section class="checklist-row" aria-label="Today's workout checklists">
+        <div class="checklist" aria-label="Today's workout checklist">
+          <div class="checklist-header">
+            <div class="checklist-kicker">today's plan</div>
+            <div class="checklist-actions">
+              <div class="checklist-meta" id="planMeta">loading</div>
+              <button class="checklist-button" id="checkAllButton" type="button">
+                <span class="button-icon" aria-hidden="true">✓</span>
+                <span class="button-text">check all</span>
+              </button>
+            </div>
           </div>
+          <ul class="checklist-list" id="checklist"></ul>
         </div>
-        <ul class="checklist-list" id="checklist"></ul>
+
+        <div class="checklist checklist--mobility" aria-label="Today's mobility checklist">
+          <div class="checklist-header">
+            <div class="checklist-kicker">mobility</div>
+            <div class="checklist-actions">
+              <div class="checklist-meta" id="mobilityMeta">loading</div>
+              <button class="checklist-button" id="mobilityCheckAll" type="button">
+                <span class="button-icon" aria-hidden="true">✓</span>
+                <span class="button-text">check all</span>
+              </button>
+            </div>
+          </div>
+          <ul class="checklist-list" id="mobilityChecklist"></ul>
+        </div>
       </section>
 
       <section class="heatmap" aria-label="Workout intensity heatmap">
-        <div class="months" id="monthLabels"></div>
+        <div class="days" id="dayLabels" aria-hidden="true"></div>
         <div class="grid" id="heatmapGrid" role="grid"></div>
         <div class="legend">
-          <span>low</span>
+          <span>Less</span>
           <div class="legend-squares">
             <span class="square level-0"></span>
             <span class="square level-1"></span>
@@ -38,11 +55,11 @@
             <span class="square level-3"></span>
             <span class="square level-4"></span>
           </div>
-          <span>high</span>
+          <span>More</span>
         </div>
       </section>
     </main>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
   </body>
 </html>

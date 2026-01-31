@@ -1,32 +1,143 @@
 const grid = document.getElementById("heatmapGrid");
-const monthLabels = document.getElementById("monthLabels");
+const dayLabels = document.getElementById("dayLabels");
 const planMetaEl = document.getElementById("planMeta");
 const checklistEl = document.getElementById("checklist");
 const checkAllButton = document.getElementById("checkAllButton");
+const mobilityMetaEl = document.getElementById("mobilityMeta");
+const mobilityChecklistEl = document.getElementById("mobilityChecklist");
+const mobilityCheckAllButton = document.getElementById("mobilityCheckAll");
 
 let currentDate = null;
 let currentPlanId = null;
+let currentMobilityPlanId = null;
+
+function getExerciseKey(exercise) {
+  if (typeof exercise === "string") return exercise;
+  if (exercise && typeof exercise === "object") {
+    return (
+      exercise.key ||
+      exercise.exercise ||
+      exercise.name ||
+      JSON.stringify(exercise)
+    );
+  }
+  return String(exercise);
+}
+
+function getExerciseDetail(exercise) {
+  if (!exercise || typeof exercise !== "object") return "";
+  const parts = [];
+  if (exercise.sets) parts.push(`${exercise.sets} sets`);
+  if (exercise.reps) parts.push(`${exercise.reps} reps`);
+  if (exercise.rounds) parts.push(`${exercise.rounds} rounds`);
+  if (exercise.minutes) parts.push(`${exercise.minutes} min`);
+  if (exercise.seconds) parts.push(`${exercise.seconds} sec`);
+  if (exercise.duration) parts.push(String(exercise.duration));
+  if (exercise.distance) parts.push(String(exercise.distance));
+  if (exercise.hold) parts.push(`${exercise.hold} hold`);
+  if (exercise.perSide) parts.push("each side");
+  if (exercise.detail) parts.push(String(exercise.detail));
+  if (exercise.note) parts.push(String(exercise.note));
+  if (exercise.notes) parts.push(String(exercise.notes));
+  if (exercise.intensity !== undefined && exercise.intensity !== null) {
+    parts.push(`intensity ${exercise.intensity}`);
+  }
+  return parts.join(" · ");
+}
+
+function getExerciseLabel(exercise) {
+  if (typeof exercise === "string") return exercise;
+  if (!exercise || typeof exercise !== "object") return String(exercise);
+  const name = exercise.exercise || exercise.name || "exercise";
+  const detail = getExerciseDetail(exercise);
+  return detail ? `${name} (${detail})` : name;
+}
+
+function setButtonText(buttonEl, text) {
+  const textEl = buttonEl.querySelector(".button-text");
+  if (textEl) {
+    textEl.textContent = text;
+  } else {
+    buttonEl.textContent = text;
+  }
+}
+
+function updateCheckAllButton(listEl, buttonEl) {
+  const inputs = Array.from(listEl.querySelectorAll("input[type=\"checkbox\"]"));
+  if (!inputs.length) {
+    buttonEl.disabled = true;
+    buttonEl.classList.remove("is-complete");
+    setButtonText(buttonEl, "check all");
+    return;
+  }
+
+  const checkedCount = inputs.filter((input) => input.checked).length;
+  const allDone = checkedCount === inputs.length;
+  if (allDone) {
+    buttonEl.disabled = false;
+    buttonEl.classList.add("is-complete");
+    setButtonText(buttonEl, "done");
+  } else {
+    buttonEl.disabled = false;
+    buttonEl.classList.remove("is-complete");
+    setButtonText(buttonEl, "check all");
+  }
+}
+
+function getHeatmapWidth() {
+  const container = grid.parentElement;
+  const containerWidth = container ? container.clientWidth : grid.clientWidth;
+  const columnGap = container
+    ? parseFloat(getComputedStyle(container).columnGap || "0")
+    : 0;
+  const dayColumnWidth =
+    dayLabels && getComputedStyle(dayLabels).display !== "none"
+      ? dayLabels.getBoundingClientRect().width || 32
+      : 0;
+  return Math.max(containerWidth - dayColumnWidth - columnGap, 0);
+}
 
 function setCellSize(weeks) {
   const root = document.documentElement;
-  const gap = window.innerWidth <= 520 ? 2 : 3;
+  const gap = 2;
   const minCell = window.innerWidth <= 520 ? 9 : 11;
   const maxCell = window.innerWidth <= 520 ? 12 : 16;
-  const width = grid.clientWidth || grid.parentElement.clientWidth;
+  const width = getHeatmapWidth();
   const raw = Math.floor((width - gap * (weeks - 1)) / weeks);
   const cell = Math.max(minCell, Math.min(maxCell, raw));
   root.style.setProperty("--cell", `${cell}px`);
   root.style.setProperty("--gap", `${gap}px`);
 }
 
+function getDaysForViewport() {
+  const gap = 2;
+  const minCell = window.innerWidth <= 520 ? 9 : 11;
+  const width = getHeatmapWidth();
+  const weeks = Math.max(
+    8,
+    Math.floor((width + gap) / (minCell + gap))
+  );
+  const days = weeks * 7;
+  return Math.min(365, Math.max(60, days));
+}
+
 function toISO(date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function fromISODate(iso) {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year, month - 1, day);
 }
 
 function startOfWeekSunday(date) {
   const d = new Date(date);
   const day = d.getDay();
-  d.setDate(d.getDate() - day);
+  const offset = day;
+  d.setDate(d.getDate() - offset);
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -37,10 +148,25 @@ function addDays(date, days) {
   return d;
 }
 
+function renderDayLabels() {
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const visible = new Set(["Mon", "Wed", "Fri"]);
+  dayLabels.innerHTML = "";
+  dayNames.forEach((label) => {
+    const span = document.createElement("span");
+    span.className = "day-label";
+    if (!visible.has(label)) {
+      span.classList.add("is-empty");
+    }
+    span.textContent = label;
+    dayLabels.appendChild(span);
+  });
+}
+
 function buildHeatmap(data, startISO, endISO) {
   const dataMap = new Map(data.map((d) => [d.date, d.intensity]));
-  const start = new Date(startISO);
-  const end = new Date(endISO);
+  const start = fromISODate(startISO);
+  const end = fromISODate(endISO);
 
   const firstSunday = startOfWeekSunday(start);
   const totalDays = Math.floor((end - firstSunday) / 86400000) + 1;
@@ -53,7 +179,7 @@ function buildHeatmap(data, startISO, endISO) {
   grid.style.gridAutoColumns = cellSize;
   grid.style.gridTemplateRows = `repeat(7, ${cellSize})`;
   grid.innerHTML = "";
-  monthLabels.innerHTML = "";
+  renderDayLabels();
 
   for (let w = 0; w < weeks; w++) {
     for (let d = 0; d < 7; d++) {
@@ -74,26 +200,11 @@ function buildHeatmap(data, startISO, endISO) {
     }
   }
 
-  const monthPositions = new Map();
-  for (let w = 0; w < weeks; w++) {
-    const weekDate = addDays(firstSunday, w * 7);
-    if (weekDate < start || weekDate > end) continue;
-    const label = weekDate.toLocaleString("en-US", { month: "short" }).toUpperCase();
-    if (!monthPositions.has(label)) {
-      monthPositions.set(label, w);
-    }
-  }
-
-  monthPositions.forEach((weekIndex, label) => {
-    const span = document.createElement("span");
-    span.textContent = label;
-    span.style.gridColumnStart = String(weekIndex + 1);
-    monthLabels.appendChild(span);
-  });
 }
 
 async function loadHeatmap() {
-  const res = await fetch("/api/heatmap?days=365");
+  const days = getDaysForViewport();
+  const res = await fetch(`/api/heatmap?days=${days}`);
   const payload = await res.json();
   buildHeatmap(payload.data, payload.start, payload.end);
 }
@@ -115,7 +226,7 @@ async function loadPlan() {
   checklistEl.innerHTML = "";
   const exercises = payload.plan?.exercises || [];
   if (!exercises.length) {
-    checkAllButton.disabled = true;
+    updateCheckAllButton(checklistEl, checkAllButton);
     const li = document.createElement("li");
     li.className = "checklist-item";
     const text = document.createElement("span");
@@ -126,13 +237,24 @@ async function loadPlan() {
     return;
   }
 
-  checkAllButton.disabled = false;
   checkAllButton.onclick = async () => {
     checkAllButton.disabled = true;
     const updates = [];
-    checklistEl.querySelectorAll("input[type=\"checkbox\"]").forEach((input) => {
+    const inputs = Array.from(
+      checklistEl.querySelectorAll("input[type=\"checkbox\"]")
+    );
+    const allDone = inputs.length > 0 && inputs.every((input) => input.checked);
+    inputs.forEach((input) => {
       const label = input.closest(".checklist-label");
-      if (!input.checked) {
+      if (allDone) {
+        if (input.checked) {
+          input.checked = false;
+          label?.classList.remove("completed");
+          updates.push(
+            updateExercise(input.dataset.exercise, false, label, false)
+          );
+        }
+      } else if (!input.checked) {
         input.checked = true;
         label?.classList.add("completed");
         updates.push(updateExercise(input.dataset.exercise, true, label, false));
@@ -140,7 +262,7 @@ async function loadPlan() {
     });
     await Promise.all(updates);
     await loadHeatmap();
-    checkAllButton.disabled = false;
+    updateCheckAllButton(checklistEl, checkAllButton);
   };
 
   exercises.forEach((exercise) => {
@@ -150,19 +272,22 @@ async function loadPlan() {
     const label = document.createElement("label");
     label.className = "checklist-label";
 
+    const exerciseKey = getExerciseKey(exercise);
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.checked = logsMap.get(exercise) || false;
-    checkbox.dataset.exercise = exercise;
+    checkbox.checked = logsMap.get(exerciseKey) || false;
+    checkbox.dataset.exercise = exerciseKey;
     checkbox.addEventListener("change", async () => {
       checkbox.disabled = true;
-      await updateExercise(exercise, checkbox.checked, label, true);
+      await updateExercise(exerciseKey, checkbox.checked, label, true);
+      await loadHeatmap();
       checkbox.disabled = false;
+      updateCheckAllButton(checklistEl, checkAllButton);
     });
 
     const span = document.createElement("span");
     span.className = "checklist-text";
-    span.textContent = exercise;
+    span.textContent = getExerciseLabel(exercise);
 
     if (checkbox.checked) {
       label.classList.add("completed");
@@ -173,6 +298,103 @@ async function loadPlan() {
     li.appendChild(label);
     checklistEl.appendChild(li);
   });
+
+  updateCheckAllButton(checklistEl, checkAllButton);
+}
+
+async function loadMobilityPlan() {
+  const res = await fetch("/api/today-mobility");
+  const payload = await res.json();
+  currentDate = payload.date;
+  currentMobilityPlanId = payload.plan?.id ?? 0;
+
+  const focus = payload.plan?.focus ? payload.plan.focus.toLowerCase() : "mobility";
+  const dayNumber = payload.plan?.dayNumber ? `day ${payload.plan.dayNumber}` : "today";
+  mobilityMetaEl.textContent = `${dayNumber} · ${focus}`;
+
+  const logsMap = new Map(
+    (payload.logs || []).map((item) => [item.exercise, !!item.completed])
+  );
+
+  mobilityChecklistEl.innerHTML = "";
+  const exercises = payload.plan?.exercises || [];
+  if (!exercises.length) {
+    updateCheckAllButton(mobilityChecklistEl, mobilityCheckAllButton);
+    const li = document.createElement("li");
+    li.className = "checklist-item";
+    const text = document.createElement("span");
+    text.className = "checklist-text";
+    text.textContent = "rest day";
+    li.appendChild(text);
+    mobilityChecklistEl.appendChild(li);
+    return;
+  }
+
+  mobilityCheckAllButton.onclick = async () => {
+    mobilityCheckAllButton.disabled = true;
+    const updates = [];
+    const inputs = Array.from(
+      mobilityChecklistEl.querySelectorAll("input[type=\"checkbox\"]")
+    );
+    const allDone = inputs.length > 0 && inputs.every((input) => input.checked);
+    inputs.forEach((input) => {
+      const label = input.closest(".checklist-label");
+      if (allDone) {
+        if (input.checked) {
+          input.checked = false;
+          label?.classList.remove("completed");
+          updates.push(
+            updateMobilityExercise(input.dataset.exercise, false, label, false)
+          );
+        }
+      } else if (!input.checked) {
+        input.checked = true;
+        label?.classList.add("completed");
+        updates.push(
+          updateMobilityExercise(input.dataset.exercise, true, label, false)
+        );
+      }
+    });
+    await Promise.all(updates);
+    await loadHeatmap();
+    updateCheckAllButton(mobilityChecklistEl, mobilityCheckAllButton);
+  };
+
+  exercises.forEach((exercise) => {
+    const li = document.createElement("li");
+    li.className = "checklist-item";
+
+    const label = document.createElement("label");
+    label.className = "checklist-label";
+
+    const exerciseKey = getExerciseKey(exercise);
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = logsMap.get(exerciseKey) || false;
+    checkbox.dataset.exercise = exerciseKey;
+    checkbox.addEventListener("change", async () => {
+      checkbox.disabled = true;
+      await updateMobilityExercise(exerciseKey, checkbox.checked, label, true);
+      await loadHeatmap();
+      checkbox.disabled = false;
+      updateCheckAllButton(mobilityChecklistEl, mobilityCheckAllButton);
+    });
+
+    const span = document.createElement("span");
+    span.className = "checklist-text";
+    span.textContent = getExerciseLabel(exercise);
+
+    if (checkbox.checked) {
+      label.classList.add("completed");
+    }
+
+    label.appendChild(checkbox);
+    label.appendChild(span);
+    li.appendChild(label);
+    mobilityChecklistEl.appendChild(li);
+  });
+
+  updateCheckAllButton(mobilityChecklistEl, mobilityCheckAllButton);
 }
 
 async function updateExercise(exercise, completed, labelEl, refresh = true) {
@@ -196,12 +418,38 @@ async function updateExercise(exercise, completed, labelEl, refresh = true) {
   }
 
   if (refresh) {
-    await loadHeatmap();
+    return;
+  }
+}
+
+async function updateMobilityExercise(exercise, completed, labelEl, refresh = true) {
+  if (!currentDate) return;
+  const res = await fetch("/api/mobility-log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: currentDate,
+      planId: currentMobilityPlanId,
+      exercise,
+      completed
+    })
+  });
+
+  if (!res.ok) return;
+  if (completed) {
+    labelEl.classList.add("completed");
+  } else {
+    labelEl.classList.remove("completed");
+  }
+
+  if (refresh) {
+    await loadMobilityPlan();
   }
 }
 
 loadHeatmap();
 loadPlan();
+loadMobilityPlan();
 
 let resizeTimer = null;
 window.addEventListener("resize", () => {
@@ -210,9 +458,10 @@ window.addEventListener("resize", () => {
 });
 
 setInterval(() => {
-  const nowISO = new Date().toISOString().slice(0, 10);
+  const nowISO = toISO(new Date());
   if (currentDate && nowISO !== currentDate) {
     loadHeatmap();
     loadPlan();
+    loadMobilityPlan();
   }
 }, 60000);

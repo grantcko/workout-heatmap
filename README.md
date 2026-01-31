@@ -32,13 +32,15 @@ SQLite file: `workouts.db`
 |-------|---------|
 | `workouts` | Heatmap intensity data (date + intensity 0-4) |
 | `workout_plans` | Planned workouts with exercises (JSON array) |
-| `workout_details` | Detailed exercise logs (sets, reps, duration) |
-| `exercise_logs` | Per-exercise completion tracking |
+| `exercise_logs` | Workout checklist completion tracking |
+| `mobility_plans` | Planned mobility sessions with exercises (JSON array) |
+| `mobility_logs` | Mobility checklist completion tracking |
 | `daily_summary` | Optional override for today display |
 
 ## UI Behavior
 
-- **Checklist** shows today's planned workout from `workout_plans`
+- **Workout checklist** shows today's planned workout from `workout_plans`
+- **Mobility checklist** shows today's plan from `mobility_plans`
 - **Check all** button marks all exercises complete at once
 - Checking **all exercises** automatically logs intensity to heatmap
 - **Unchecking** removes the heatmap entry
@@ -91,6 +93,26 @@ Body:
 
 When all exercises are completed, automatically inserts a workout with the plan's difficulty as intensity.
 
+### Get today's mobility plan + checklist state
+```
+GET /api/today-mobility
+```
+
+### Log mobility completion
+```
+POST /api/mobility-log
+```
+
+Body:
+```json
+{
+  "date": "2026-01-31",
+  "planId": 1,
+  "exercise": "hip opener",
+  "completed": true
+}
+```
+
 ### Log a workout directly (agent use)
 ```
 POST /api/workouts
@@ -133,6 +155,15 @@ Exercises can be strings or objects:
 ```
 
 The UI displays the exercise name; detailed properties are for agent reference.
+
+## Mobility Plans
+
+Plans are stored in `mobility_plans` with exercises as a JSON array:
+
+```sql
+INSERT INTO mobility_plans (day_number, focus, exercises) VALUES 
+(1, 'hips + ankles', '["ankle circles", "hip openers", "hamstring stretch"]');
+```
 
 ## Integration with OpenClaw
 
