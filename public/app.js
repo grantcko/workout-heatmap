@@ -8,13 +8,15 @@ const mobilityMetaEl = document.getElementById("mobilityMeta");
 const mobilityChecklistEl = document.getElementById("mobilityChecklist");
 const mobilityCheckAllButton = document.getElementById("mobilityCheckAll");
 
-let currentDate = null;
-let currentPlanId = null;
-let currentMobilityPlanId = null;
-let currentFocus = "";
-let currentMobilityFocus = "";
-let workoutItems = [];
-let mobilityItems = [];
+const state = {
+  currentDate: null,
+  currentPlanId: null,
+  currentMobilityPlanId: null,
+  currentFocus: "",
+  currentMobilityFocus: "",
+  workoutItems: [],
+  mobilityItems: []
+};
 
 function escapeHtml(value) {
   return String(value)
@@ -32,7 +34,7 @@ function formatTooltipItems(items) {
   return items
     .map(
       (item) =>
-        `<div class="tooltip-item"><span class="tooltip-check">${item.completed ? "[x]" : "[ ]"}</span><span>${escapeHtml(item.exercise)}</span></div>`
+        `<div class="tooltip-item"><span class="tooltip-check">${item.completed ? "✔" : "☐"}</span><span>${escapeHtml(item.exercise)}</span></div>`
     )
     .join("");
 }
@@ -154,7 +156,7 @@ function getItemIntensityValue(item) {
 }
 
 async function saveChecklistItems(type, items, focus) {
-  if (!currentDate) return;
+  if (!state.currentDate) return;
   const payloadItems = items
     .map((item) => ({
       exercise: (item?.exercise || "").trim(),
@@ -167,7 +169,7 @@ async function saveChecklistItems(type, items, focus) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      date: currentDate,
+      date: state.currentDate,
       type,
       focus: focus || "custom",
       items: payloadItems
@@ -537,9 +539,9 @@ async function loadPlan() {
     cache: "no-store"
   });
   const payload = await res.json();
-  currentDate = payload.date;
-  currentPlanId = payload.plan?.id ?? 0;
-  currentFocus = payload.plan?.focus || "";
+  state.currentDate = payload.date;
+  state.currentPlanId = payload.plan?.id ?? 0;
+  state.currentFocus = payload.plan?.focus || "";
 
   const focus = payload.plan?.focus ? payload.plan.focus.toLowerCase() : "plan";
   const dayNumber = payload.plan?.dayNumber ? `day ${payload.plan.dayNumber}` : "today";
@@ -550,7 +552,7 @@ async function loadPlan() {
   );
 
   const exercises = extractExercises(payload);
-  workoutItems = exercises.map((exercise) => ({
+  state.workoutItems = exercises.map((exercise) => ({
     ...exercise,
     completed: logsMap.get(getExerciseKey(exercise)) || false
   }));
@@ -558,7 +560,7 @@ async function loadPlan() {
   checkAllButton.onclick = async () => {
     checkAllButton.disabled = true;
     const updates = [];
-    const itemByKey = new Map(workoutItems.map((item) => [item.key, item]));
+    const itemByKey = new Map(state.workoutItems.map((item) => [item.key, item]));
     const inputs = Array.from(
       checklistEl.querySelectorAll("input[type=\"checkbox\"]")
     );
@@ -587,7 +589,7 @@ async function loadPlan() {
     await loadHeatmap();
     updateCheckAllButton(checklistEl, checkAllButton);
   };
-  renderChecklist(checklistEl, workoutItems, "workout", currentFocus, logsMap, checkAllButton);
+  renderChecklist(checklistEl, state.workoutItems, "workout", state.currentFocus, logsMap, checkAllButton);
 }
 
 async function loadMobilityPlan() {
@@ -596,9 +598,9 @@ async function loadMobilityPlan() {
     cache: "no-store"
   });
   const payload = await res.json();
-  currentDate = payload.date;
-  currentMobilityPlanId = payload.plan?.id ?? 0;
-  currentMobilityFocus = payload.plan?.focus || "";
+  state.currentDate = payload.date;
+  state.currentMobilityPlanId = payload.plan?.id ?? 0;
+  state.currentMobilityFocus = payload.plan?.focus || "";
 
   const focus = payload.plan?.focus ? payload.plan.focus.toLowerCase() : "mobility";
   const dayNumber = payload.plan?.dayNumber ? `day ${payload.plan.dayNumber}` : "today";
@@ -609,7 +611,7 @@ async function loadMobilityPlan() {
   );
 
   const exercises = extractExercises(payload);
-  mobilityItems = exercises.map((exercise) => ({
+  state.mobilityItems = exercises.map((exercise) => ({
     ...exercise,
     completed: logsMap.get(getExerciseKey(exercise)) || false
   }));
@@ -617,7 +619,7 @@ async function loadMobilityPlan() {
   mobilityCheckAllButton.onclick = async () => {
     mobilityCheckAllButton.disabled = true;
     const updates = [];
-    const itemByKey = new Map(mobilityItems.map((item) => [item.key, item]));
+    const itemByKey = new Map(state.mobilityItems.map((item) => [item.key, item]));
     const inputs = Array.from(
       mobilityChecklistEl.querySelectorAll("input[type=\"checkbox\"]")
     );
@@ -650,22 +652,22 @@ async function loadMobilityPlan() {
   };
   renderChecklist(
     mobilityChecklistEl,
-    mobilityItems,
+    state.mobilityItems,
     "mobility",
-    currentMobilityFocus,
+    state.currentMobilityFocus,
     logsMap,
     mobilityCheckAllButton
   );
 }
 
 async function updateExercise(exercise, completed, labelEl, refresh = true) {
-  if (!currentDate) return;
+  if (!state.currentDate) return;
   const res = await fetch("/api/exercise-log", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      date: currentDate,
-      planId: currentPlanId,
+      date: state.currentDate,
+      planId: state.currentPlanId,
       exercise,
       completed
     })
@@ -684,13 +686,13 @@ async function updateExercise(exercise, completed, labelEl, refresh = true) {
 }
 
 async function updateMobilityExercise(exercise, completed, labelEl, refresh = true) {
-  if (!currentDate) return;
+  if (!state.currentDate) return;
   const res = await fetch("/api/mobility-log", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      date: currentDate,
-      planId: currentMobilityPlanId,
+      date: state.currentDate,
+      planId: state.currentMobilityPlanId,
       exercise,
       completed
     })
@@ -720,7 +722,7 @@ window.addEventListener("resize", () => {
 
 setInterval(() => {
   const nowISO = toISO(new Date());
-  if (currentDate && nowISO !== currentDate) {
+  if (state.currentDate && nowISO !== state.currentDate) {
     loadHeatmap();
     loadPlan();
     loadMobilityPlan();
