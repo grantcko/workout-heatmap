@@ -1,5 +1,6 @@
 const grid = document.getElementById("heatmapGrid");
 const dayLabels = document.getElementById("dayLabels");
+const tooltipEl = document.getElementById("heatmapTooltip");
 const planMetaEl = document.getElementById("planMeta");
 const checklistEl = document.getElementById("checklist");
 const checkAllButton = document.getElementById("checkAllButton");
@@ -11,6 +12,68 @@ let currentDate = null;
 let currentPlanId = null;
 let currentMobilityPlanId = null;
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatTooltipItems(items) {
+  if (!items.length) {
+    return `<div class="tooltip-empty">none</div>`;
+  }
+  return items
+    .map(
+      (item) =>
+        `<div class="tooltip-item"><span class="tooltip-check">${item.completed ? "[x]" : "[ ]"}</span><span>${escapeHtml(item.exercise)}</span></div>`
+    )
+    .join("");
+}
+
+function positionTooltip(rect) {
+  if (!tooltipEl || !rect) return;
+  const padding = 10;
+  const tooltipRect = tooltipEl.getBoundingClientRect();
+  let top = rect.top - tooltipRect.height - 10;
+  if (top < padding) {
+    top = rect.bottom + 10;
+  }
+  let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+  left = Math.max(padding, Math.min(left, window.innerWidth - tooltipRect.width - padding));
+  tooltipEl.style.top = `${Math.round(top)}px`;
+  tooltipEl.style.left = `${Math.round(left)}px`;
+}
+
+function showTooltip(cell, iso, detailsMap) {
+  if (!tooltipEl) return;
+  const details = detailsMap?.[iso] || { workout: [], mobility: [] };
+  const workoutItems = (details.workout || []).filter((item) => item.completed);
+  const mobilityItems = (details.mobility || []).filter((item) => item.completed);
+  tooltipEl.innerHTML = `
+    <div class="tooltip-date">${escapeHtml(iso)}</div>
+    <div class="tooltip-section">
+      <div class="tooltip-title">exercise</div>
+      ${formatTooltipItems(workoutItems)}
+    </div>
+    <div class="tooltip-section">
+      <div class="tooltip-title">mobility</div>
+      ${formatTooltipItems(mobilityItems)}
+    </div>
+  `;
+  tooltipEl.classList.add("is-visible");
+  tooltipEl.setAttribute("aria-hidden", "false");
+  positionTooltip(cell.getBoundingClientRect());
+}
+
+function hideTooltip() {
+  if (!tooltipEl) return;
+  tooltipEl.classList.remove("is-visible");
+  tooltipEl.setAttribute("aria-hidden", "true");
+}
+
 function getExerciseKey(exercise) {
   if (typeof exercise === "string") return exercise;
   if (exercise && typeof exercise === "object") {
@@ -18,6 +81,8 @@ function getExerciseKey(exercise) {
       exercise.key ||
       exercise.exercise ||
       exercise.name ||
+      exercise.title ||
+      exercise.label ||
       JSON.stringify(exercise)
     );
   }
@@ -39,8 +104,8 @@ function getExerciseDetail(exercise) {
   if (exercise.detail) parts.push(String(exercise.detail));
   if (exercise.note) parts.push(String(exercise.note));
   if (exercise.notes) parts.push(String(exercise.notes));
-  if (exercise.intensity !== undefined && exercise.intensity !== null) {
-    parts.push(`intensity ${exercise.intensity}`);
+  if (exercise.displayIntensity !== undefined && exercise.displayIntensity !== null) {
+    parts.push(`intensity ${exercise.displayIntensity}`);
   }
   return parts.join(" · ");
 }
@@ -48,9 +113,29 @@ function getExerciseDetail(exercise) {
 function getExerciseLabel(exercise) {
   if (typeof exercise === "string") return exercise;
   if (!exercise || typeof exercise !== "object") return String(exercise);
-  const name = exercise.exercise || exercise.name || "exercise";
+  const name = exercise.exercise || exercise.name || exercise.title || exercise.label || "exercise";
   const detail = getExerciseDetail(exercise);
   return detail ? `${name} (${detail})` : name;
+}
+
+function extractExercises(payload) {
+  const plan = payload?.plan || null;
+  const raw =
+    plan?.exercises ??
+    payload?.exercises ??
+    plan?.items ??
+    payload?.items ??
+    plan?.list ??
+    payload?.list ??
+    [];
+
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") {
+    if (Array.isArray(raw.exercises)) return raw.exercises;
+    if (Array.isArray(raw.items)) return raw.items;
+    if (Array.isArray(raw.list)) return raw.list;
+  }
+  return [];
 }
 
 function setButtonText(buttonEl, text) {
@@ -148,6 +233,14 @@ function addDays(date, days) {
   return d;
 }
 
+function getHeatmapLevel(total) {
+  if (total <= 0) return 0;
+  if (total <= 4) return 1;
+  if (total <= 7) return 2;
+  if (total <= 10) return 3;
+  return 4;
+}
+
 function renderDayLabels() {
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const visible = new Set(["Mon", "Wed", "Fri"]);
@@ -163,8 +256,8 @@ function renderDayLabels() {
   });
 }
 
-function buildHeatmap(data, startISO, endISO) {
-  const dataMap = new Map(data.map((d) => [d.date, d.intensity]));
+function buildHeatmap(data, startISO, endISO, detailsMap = {}) {
+  const dataMap = new Map(data.map((d) => [d.date, d]));
   const start = fromISODate(startISO);
   const end = fromISODate(endISO);
 
@@ -191,10 +284,17 @@ function buildHeatmap(data, startISO, endISO) {
         cell.classList.add("level-0");
         cell.setAttribute("aria-hidden", "true");
       } else {
-        const intensity = dataMap.get(iso) ?? 0;
-        cell.classList.add(`level-${intensity}`);
-        cell.title = `${iso} · intensity ${intensity}`;
+        const entry = dataMap.get(iso);
+        const total = entry?.total ?? 0;
+        const level = getHeatmapLevel(total);
+        cell.classList.add(`level-${level}`);
         cell.setAttribute("role", "gridcell");
+        cell.tabIndex = 0;
+        cell.dataset.date = iso;
+        cell.addEventListener("mouseenter", () => showTooltip(cell, iso, detailsMap));
+        cell.addEventListener("mouseleave", hideTooltip);
+        cell.addEventListener("focus", () => showTooltip(cell, iso, detailsMap));
+        cell.addEventListener("blur", hideTooltip);
       }
       grid.appendChild(cell);
     }
@@ -204,13 +304,19 @@ function buildHeatmap(data, startISO, endISO) {
 
 async function loadHeatmap() {
   const days = getDaysForViewport();
-  const res = await fetch(`/api/heatmap?days=${days}`);
+  hideTooltip();
+  const res = await fetch(`/api/heatmap?days=${days}&details=1&t=${Date.now()}`, {
+    cache: "no-store"
+  });
   const payload = await res.json();
-  buildHeatmap(payload.data, payload.start, payload.end);
+  buildHeatmap(payload.data, payload.start, payload.end, payload.details || {});
 }
 
 async function loadPlan() {
-  const res = await fetch("/api/today-plan");
+  const todayISO = toISO(new Date());
+  const res = await fetch(`/api/today-plan?date=${todayISO}`, {
+    cache: "no-store"
+  });
   const payload = await res.json();
   currentDate = payload.date;
   currentPlanId = payload.plan?.id ?? 0;
@@ -224,7 +330,7 @@ async function loadPlan() {
   );
 
   checklistEl.innerHTML = "";
-  const exercises = payload.plan?.exercises || [];
+  const exercises = extractExercises(payload);
   if (!exercises.length) {
     updateCheckAllButton(checklistEl, checkAllButton);
     const li = document.createElement("li");
@@ -303,7 +409,10 @@ async function loadPlan() {
 }
 
 async function loadMobilityPlan() {
-  const res = await fetch("/api/today-mobility");
+  const todayISO = toISO(new Date());
+  const res = await fetch(`/api/today-mobility?date=${todayISO}`, {
+    cache: "no-store"
+  });
   const payload = await res.json();
   currentDate = payload.date;
   currentMobilityPlanId = payload.plan?.id ?? 0;
@@ -317,7 +426,7 @@ async function loadMobilityPlan() {
   );
 
   mobilityChecklistEl.innerHTML = "";
-  const exercises = payload.plan?.exercises || [];
+  const exercises = extractExercises(payload);
   if (!exercises.length) {
     updateCheckAllButton(mobilityChecklistEl, mobilityCheckAllButton);
     const li = document.createElement("li");
