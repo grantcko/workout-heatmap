@@ -87,6 +87,14 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS daily_mobility_plans (
+    workout_date TEXT PRIMARY KEY,
+    focus TEXT,
+    exercises TEXT NOT NULL,
+    difficulty INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS workout_snapshots (
     workout_date TEXT NOT NULL,
     note TEXT NOT NULL,
@@ -286,6 +294,26 @@ function getDailyPlanExercises(dateISO) {
   return normalizeExercises(exercises, defaultIntensity);
 }
 
+function getDailyMobilityPlanExercises(dateISO) {
+  const row = db
+    .prepare(
+      `
+      SELECT focus, exercises, difficulty
+      FROM daily_mobility_plans
+      WHERE workout_date = ?
+      `
+    )
+    .get(dateISO);
+  if (!row) return [];
+  let exercises = [];
+  try {
+    exercises = JSON.parse(row.exercises || "[]");
+  } catch {
+    exercises = [];
+  }
+  return normalizeExercises(exercises, 0);
+}
+
 function upsertWorkoutIntensity(date, note, intensity) {
   const safeIntensity = clampWorkoutIntensity(intensity, 0);
   if (safeIntensity <= 0) {
@@ -357,6 +385,30 @@ function normalizeCompletedItems(items) {
         const exercise = item.exercise || item.name || item.title || item.label;
         if (!exercise) return null;
         return { exercise: String(exercise), completed: true };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function sanitizeChecklistItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      if (typeof item === "string") {
+        return { exercise: item, intensity: undefined, completed: false };
+      }
+      if (item && typeof item === "object") {
+        const exercise =
+          item.exercise || item.name || item.title || item.label || "";
+        if (!exercise) return null;
+        const intensity =
+          item.intensity ?? item.level ?? item.rating ?? undefined;
+        return {
+          exercise: String(exercise),
+          intensity,
+          completed: !!item.completed
+        };
       }
       return null;
     })
@@ -512,6 +564,8 @@ function computeChecklistIntensity(date, planId, type) {
   let exercises = [];
   if (type === "workout" && planId === 0) {
     exercises = getDailyPlanExercises(date);
+  } else if (type === "mobility" && planId === 0) {
+    exercises = getDailyMobilityPlanExercises(date);
   } else {
     exercises = getExerciseIntensityMap(planId, type);
   }
@@ -1038,7 +1092,39 @@ app.get("/api/today-mobility", (req, res) => {
     });
   }
   
-  const plan = getMobilityPlanForDate(today);
+  const dailyRow = db.prepare(
+    `
+    SELECT workout_date, focus, exercises, difficulty
+    FROM daily_mobility_plans
+    WHERE workout_date = ?
+    `
+  ).get(today);
+
+  let plan = null;
+  if (dailyRow) {
+    let exercises = [];
+    try {
+      exercises = JSON.parse(dailyRow.exercises || "[]");
+    } catch {
+      exercises = [];
+    }
+    plan = {
+      id: 0,
+      day_number: 0,
+      focus: dailyRow.focus || "",
+      exercises
+    };
+
+    db.prepare(
+      `
+      DELETE FROM mobility_logs
+      WHERE workout_date = ? AND plan_id != 0
+      `
+    ).run(today);
+  } else {
+    plan = getMobilityPlanForDate(today);
+  }
+
   const normalizedExercises = normalizeExercises(plan.exercises || [], 1);
 
   if (normalizedExercises.length) {
@@ -1087,6 +1173,86 @@ app.get("/api/today-mobility", (req, res) => {
     },
     logs
   });
+});
+
+app.post("/api/checklist-items", (req, res) => {
+  const { date, type, focus = "custom", items = [] } = req.body || {};
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+  }
+  if (type !== "workout" && type !== "mobility") {
+    return res.status(400).json({ error: "type must be workout or mobility" });
+  }
+
+  const sanitized = sanitizeChecklistItems(items);
+  const planItems = sanitized.map((item) => ({
+    exercise: item.exercise,
+    intensity: item.intensity
+  }));
+  const completedFlags = sanitized.map((item) => !!item.completed);
+
+  if (type === "workout") {
+    db.prepare(
+      `
+      INSERT INTO daily_plans (workout_date, focus, exercises, difficulty)
+      VALUES (?, ?, ?, NULL)
+      ON CONFLICT(workout_date) DO UPDATE SET
+        focus = excluded.focus,
+        exercises = excluded.exercises,
+        difficulty = excluded.difficulty,
+        created_at = excluded.created_at
+      `
+    ).run(date, focus || "custom", JSON.stringify(planItems));
+  } else {
+    db.prepare(
+      `
+      INSERT INTO daily_mobility_plans (workout_date, focus, exercises, difficulty)
+      VALUES (?, ?, ?, NULL)
+      ON CONFLICT(workout_date) DO UPDATE SET
+        focus = excluded.focus,
+        exercises = excluded.exercises,
+        difficulty = excluded.difficulty,
+        created_at = excluded.created_at
+      `
+    ).run(date, focus || "mobility", JSON.stringify(planItems));
+  }
+
+  const isRecovery = /mobility|recovery|stretch|yoga|rest/i.test(focus || "");
+  const defaultIntensity = type === "mobility" ? 0 : isRecovery ? 0 : 1;
+  const normalizedExercises = normalizeExercises(planItems, defaultIntensity);
+  const table = type === "mobility" ? "mobility_logs" : "exercise_logs";
+
+  db.prepare(
+    `
+    DELETE FROM ${table}
+    WHERE workout_date = ?
+    `
+  ).run(date);
+
+  if (normalizedExercises.length) {
+    const insert = db.prepare(
+      `
+      INSERT OR IGNORE INTO ${table} (workout_date, plan_id, exercise, completed)
+      VALUES (?, 0, ?, ?)
+      `
+    );
+    const insertMany = db.transaction((rows) => {
+      rows.forEach((exercise, index) => {
+        insert.run(date, exercise.key, completedFlags[index] ? 1 : 0);
+      });
+    });
+    insertMany(normalizedExercises);
+  }
+
+  const intensityTotal = computeChecklistIntensity(date, 0, type);
+  const note = type === "mobility" ? "mobility-checklist" : "checklist";
+  upsertWorkoutIntensity(date, note, intensityTotal);
+  const completedItems = getCompletedChecklistItems(date, 0, type);
+  if (completedItems.length) {
+    upsertWorkoutSnapshot(date, note, completedItems);
+  }
+  const level = mapIntensityToLevel(intensityTotal);
+  res.json({ ok: true, total: intensityTotal, level });
 });
 
 app.post("/api/exercise-log", (req, res) => {
