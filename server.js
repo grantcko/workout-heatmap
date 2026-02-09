@@ -21,8 +21,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, "workouts.db");
+const PORT = process.env.PORT || 2;
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, "slowburn.db");
 
 if (process.env.NODE_ENV !== "production") {
   const lrserver = livereload.createServer({
@@ -1242,6 +1242,6 @@ app.post("/api/mobility-log", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Workout heatmap running on http://localhost:${PORT}`);
+  console.log(`Slowburn running on http://localhost:${PORT}`);
   console.log(`DB: ${DB_PATH}`);
 });

@@ -1,6 +1,6 @@
-# Workout Heatmap
+# Slowburn
 
-GitHub-style workout heatmap with daily checklist, SQLite database, and AI agent integration.
+Slowburn is a GitHub-style workout heatmap with daily checklist, SQLite database, and AI agent integration.
 
 ![Light and dark mode supported]
 
@@ -26,7 +26,7 @@ App runs at `http://localhost:3000`.
 
 ## Database
 
-SQLite file: `workouts.db`
+SQLite file: `slowburn.db`
 
 ### Tables
 

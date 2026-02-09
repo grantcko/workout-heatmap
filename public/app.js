@@ -272,7 +272,6 @@ function createChecklistItemActions(item, items, type, focus, listEl) {
 function renderChecklist(listEl, items, type, focus, logsMap, checkAllButton) {
   listEl.innerHTML = "";
   if (!items.length) {
-    updateCheckAllButton(listEl, checkAllButton);
     const li = document.createElement("li");
     li.className = "checklist-item";
     const text = document.createElement("span");
@@ -280,55 +279,54 @@ function renderChecklist(listEl, items, type, focus, logsMap, checkAllButton) {
     text.textContent = "rest day";
     li.appendChild(text);
     listEl.appendChild(li);
-    return;
-  }
+  } else {
+    items.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = "checklist-item";
 
-  items.forEach((item) => {
-    const li = document.createElement("li");
-    li.className = "checklist-item";
+      const row = document.createElement("div");
+      row.className = "checklist-row-item";
 
-    const row = document.createElement("div");
-    row.className = "checklist-row-item";
+      const label = document.createElement("label");
+      label.className = "checklist-label";
 
-    const label = document.createElement("label");
-    label.className = "checklist-label";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    const checkedValue = logsMap.has(item.key)
-      ? logsMap.get(item.key)
-      : !!item.completed;
-    checkbox.checked = checkedValue || false;
-    item.completed = checkbox.checked;
-    checkbox.dataset.exercise = item.key;
-    checkbox.addEventListener("change", async () => {
-      checkbox.disabled = true;
-      if (type === "workout") {
-        await updateExercise(item.key, checkbox.checked, label, true);
-      } else {
-        await updateMobilityExercise(item.key, checkbox.checked, label, true);
-      }
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      const checkedValue = logsMap.has(item.key)
+        ? logsMap.get(item.key)
+        : !!item.completed;
+      checkbox.checked = checkedValue || false;
       item.completed = checkbox.checked;
-      await loadHeatmap();
-      checkbox.disabled = false;
-      updateCheckAllButton(listEl, checkAllButton);
+      checkbox.dataset.exercise = item.key;
+      checkbox.addEventListener("change", async () => {
+        checkbox.disabled = true;
+        if (type === "workout") {
+          await updateExercise(item.key, checkbox.checked, label, true);
+        } else {
+          await updateMobilityExercise(item.key, checkbox.checked, label, true);
+        }
+        item.completed = checkbox.checked;
+        await loadHeatmap();
+        checkbox.disabled = false;
+        updateCheckAllButton(listEl, checkAllButton);
+      });
+
+      const span = document.createElement("span");
+      span.className = "checklist-text";
+      span.textContent = getExerciseLabel(item);
+
+      if (checkbox.checked) {
+        label.classList.add("completed");
+      }
+
+      label.appendChild(checkbox);
+      label.appendChild(span);
+      row.appendChild(label);
+      row.appendChild(createChecklistItemActions(item, items, type, focus, listEl));
+      li.appendChild(row);
+      listEl.appendChild(li);
     });
-
-    const span = document.createElement("span");
-    span.className = "checklist-text";
-    span.textContent = getExerciseLabel(item);
-
-    if (checkbox.checked) {
-      label.classList.add("completed");
-    }
-
-    label.appendChild(checkbox);
-    label.appendChild(span);
-    row.appendChild(label);
-    row.appendChild(createChecklistItemActions(item, items, type, focus, listEl));
-    li.appendChild(row);
-    listEl.appendChild(li);
-  });
+  }
 
   const addLi = document.createElement("li");
   addLi.className = "checklist-item";
