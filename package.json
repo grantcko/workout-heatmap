@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "build:sidecar": "bash scripts/build-sidecar.sh",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "test": "node --test"
   },
   "dependencies": {
@@ -13,8 +16,18 @@
     "express": "^4.19.2"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "esbuild": "^0.24.0",
+    "pkg": "^5.8.1",
     "connect-livereload": "^0.6.1",
     "livereload": "^0.10.3",
     "nodemon": "^3.1.11"
+  },
+  "pkg": {
+    "assets": [
+      "package.json",
+      "node_modules/better-sqlite3/package.json",
+      "node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+    ]
   }
 }

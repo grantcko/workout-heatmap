@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slowburn</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8f5f1;
+        --card: #ffffff;
+        --ink: #14100c;
+        --muted: #6a5f58;
+        --border: #eadfd4;
+        --accent: #d14b3f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Georgia", "Times New Roman", serif;
+        background: radial-gradient(circle at top, #fff7f2, var(--bg));
+        color: var(--ink);
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+      }
+      .card {
+        width: min(520px, 92vw);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 28px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.08);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+        letter-spacing: 0.2px;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .row {
+        margin-top: 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 12px rgba(209, 75, 63, 0.6);
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      button {
+        margin-left: auto;
+        border: 1px solid var(--border);
+        background: #14100c;
+        color: #fff;
+        padding: 8px 14px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      @keyframes pulse {
+        0%, 100% { transform: scale(0.85); opacity: 0.6; }
+        50% { transform: scale(1); opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Starting Slowburn…</h1>
+      <p id="status">Waiting for the local server on 127.0.0.1:3002.</p>
+      <div class="row">
+        <div class="dot"></div>
+        <p style="margin: 0; font-size: 13px;">This should only take a moment.</p>
+        <button id="openBtn">Open now</button>
+      </div>
+    </div>
+    <script>
+      const target = "http://127.0.0.1:3002";
+      const statusEl = document.getElementById("status");
+      const openBtn = document.getElementById("openBtn");
+
+      openBtn.addEventListener("click", () => {
+        window.location.replace(target);
+      });
+
+      async function waitForServer() {
+        try {
+          await fetch(target, { mode: "no-cors" });
+          window.location.replace(target);
+          return;
+        } catch (err) {
+          statusEl.textContent = "Still waiting for the local server…";
+        }
+        setTimeout(waitForServer, 400);
+      }
+
+      waitForServer();
+    </script>
+  </body>
+</html>
