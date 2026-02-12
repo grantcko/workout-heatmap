@@ -1,6 +1,6 @@
-# Slowburn
+# slowburn
 
-Slowburn is a GitHub-style workout heatmap with daily checklist, SQLite database, and AI agent integration.
+slowburn is a GitHub-style workout heatmap with daily checklist, SQLite database, and AI agent integration.
 
 ![Light and dark mode supported]
 

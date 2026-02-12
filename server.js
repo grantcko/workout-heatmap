@@ -2,8 +2,6 @@ import express from "express";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
-import livereload from "livereload";
-import connectLivereload from "connect-livereload";
 import {
   buildExerciseKey,
   clampExerciseIntensity,
@@ -17,15 +15,24 @@ import {
   toLocalISODate
 } from "./lib/workout-utils.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentFile =
+  typeof __filename !== "undefined" ? __filename : fileURLToPath(import.meta.url);
+const __dirname = path.dirname(currentFile);
 
 const app = express();
-const PORT = process.env.PORT || 2;
+const PORT = process.env.PORT || 3002;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "slowburn.db");
 
-if (process.env.NODE_ENV !== "production") {
+if (process.env.NODE_ENV !== "production" && process.env.DISABLE_LIVERELOAD !== "1") {
+  const [{ default: livereload }, { default: connectLivereload }] = await Promise.all([
+    import("livereload"),
+    import("connect-livereload")
+  ]);
+  const LR_PORT = process.env.LIVERELOAD_PORT
+    ? Number(process.env.LIVERELOAD_PORT)
+    : 35729;
   const lrserver = livereload.createServer({
+    port: LR_PORT,
     exts: ["html", "css", "js"],
     delay: 100
   });
@@ -1242,6 +1249,6 @@ app.post("/api/mobility-log", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Slowburn running on http://localhost:${PORT}`);
+  console.log(`slowburn running on http://localhost:${PORT}`);
   console.log(`DB: ${DB_PATH}`);
 });
