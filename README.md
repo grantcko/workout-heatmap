@@ -24,6 +24,14 @@ npm run dev
 
 App runs at `http://localhost:3000`.
 
+## Install macOS app
+
+```bash
+npm run install:app
+```
+
+This builds Tauri and installs `Slowburn.app` to `/Applications`.
+
 ## Database
 
 SQLite file: `slowburn.db`

@@ -7,6 +7,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "build:sidecar": "bash scripts/build-sidecar.sh",
+    "install:app": "bash scripts/install-app.sh",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "node --test"
