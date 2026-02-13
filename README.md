@@ -1,6 +1,6 @@
-# Slowburn
+# slowburn
 
-Slowburn is a GitHub-style workout heatmap with daily checklist, SQLite database, and AI agent integration.
+slowburn is a GitHub-style workout heatmap with daily checklist, SQLite database, and AI agent integration.
 
 ![Light and dark mode supported]
 
@@ -23,6 +23,14 @@ npm run dev
 ```
 
 App runs at `http://localhost:3000`.
+
+## Install macOS app
+
+```bash
+npm run install:app
+```
+
+This builds Tauri and installs `Slowburn.app` to `/Applications`.
 
 ## Database
 

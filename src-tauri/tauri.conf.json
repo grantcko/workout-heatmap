@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Slowburn",
+  "version": "0.1.0",
+  "identifier": "com.grantcko.slowburn",
+  "build": {
+    "beforeDevCommand": "DISABLE_LIVERELOAD=1 npm run dev",
+    "beforeBuildCommand": "bash /Users/granthall/code/grantcko/slowburn/scripts/bundle-resources.sh",
+    "devUrl": "http://localhost:3002",
+    "frontendDist": "redirect"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Slowburn",
+        "width": 1200,
+        "height": 900,
+        "resizable": true,
+        "url": "index.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "resources/slowburn-app",
+      "resources/slowburn.db"
+    ]
+  }
+}
