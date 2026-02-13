@@ -75,34 +75,21 @@
   <body>
     <div class="card">
       <h1>Starting Slowburn…</h1>
-      <p id="status">Waiting for the local server on 127.0.0.1:3002.</p>
+      <p id="status">Waiting for the local server to become ready.</p>
       <div class="row">
         <div class="dot"></div>
         <p style="margin: 0; font-size: 13px;">This should only take a moment.</p>
-        <button id="openBtn">Open now</button>
+        <button id="openBtn">Retry</button>
       </div>
     </div>
     <script>
-      const target = "http://127.0.0.1:3002";
       const statusEl = document.getElementById("status");
       const openBtn = document.getElementById("openBtn");
 
       openBtn.addEventListener("click", () => {
-        window.location.replace(target);
+        window.location.reload();
       });
-
-      async function waitForServer() {
-        try {
-          await fetch(target, { mode: "no-cors" });
-          window.location.replace(target);
-          return;
-        } catch (err) {
-          statusEl.textContent = "Still waiting for the local server…";
-        }
-        setTimeout(waitForServer, 400);
-      }
-
-      waitForServer();
+      statusEl.textContent = "Still waiting for the local server…";
     </script>
   </body>
 </html>

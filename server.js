@@ -150,7 +150,7 @@ app.use(express.json({ limit: "64kb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, app: "slowburn" });
 });
 
 function getExerciseIntensityMap(planId, type) {

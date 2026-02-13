@@ -1,10 +1,42 @@
 use std::fs;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
+use std::time::Duration;
 use tauri::Manager;
 
 struct ServerState(Arc<Mutex<Option<Child>>>);
+
+fn reserve_port() -> Option<u16> {
+  TcpListener::bind("127.0.0.1:0")
+    .ok()
+    .and_then(|listener| listener.local_addr().ok().map(|addr| addr.port()))
+}
+
+fn health_matches(port: u16, expected_app: &str) -> bool {
+  let addr: SocketAddr = match format!("127.0.0.1:{port}").parse() {
+    Ok(addr) => addr,
+    Err(_) => return false
+  };
+  let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(250)) {
+    Ok(stream) => stream,
+    Err(_) => return false
+  };
+  let request = format!(
+    "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+  );
+  if stream.write_all(request.as_bytes()).is_err() {
+    return false;
+  }
+  let mut response = String::new();
+  if stream.read_to_string(&mut response).is_err() {
+    return false;
+  }
+  response.contains(&format!("\"app\":\"{expected_app}\""))
+    || response.contains(&format!("\"app\": \"{expected_app}\""))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -44,11 +76,12 @@ pub fn run() {
             let _ = fs::copy(bundled_db, &db_path);
           }
         }
+        let port = reserve_port().unwrap_or(3002);
 
         let mut cmd = std::process::Command::new(node_bin);
         cmd.arg(server_js)
           .current_dir(app_dir)
-          .env("PORT", "3002")
+          .env("PORT", port.to_string())
           .env("NODE_ENV", "production")
           .env("DISABLE_LIVERELOAD", "1")
           .env("DB_PATH", db_path);
@@ -64,13 +97,13 @@ pub fn run() {
 
         let app_handle = _app.handle().clone();
         std::thread::spawn(move || {
-          let addr = "127.0.0.1:3002";
           for _ in 0..60 {
-            if std::net::TcpStream::connect(addr).is_ok() {
+            if health_matches(port, "slowburn") {
               let window = app_handle
                 .get_webview_window("main");
               if let Some(window) = window {
-                if let Err(err) = window.eval("location.replace('http://127.0.0.1:3002');") {
+                let url = format!("http://127.0.0.1:{port}");
+                if let Err(err) = window.eval(&format!("location.replace('{url}');")) {
                   eprintln!("Failed to navigate Slowburn window: {err}");
                 }
               } else {
@@ -78,9 +111,9 @@ pub fn run() {
               }
               return;
             }
-            std::thread::sleep(std::time::Duration::from_millis(250));
+            std::thread::sleep(Duration::from_millis(250));
           }
-          eprintln!("Slowburn server did not become ready on {addr}");
+          eprintln!("Slowburn server did not become ready on port {port}");
         });
       }
       Ok(())
